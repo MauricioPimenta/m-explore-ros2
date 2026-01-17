@@ -41,7 +41,7 @@
 #include <map_merge/map_merge.h>
 #include <map_merge/ros1_names.hpp>
 #include <rcpputils/asserts.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 nav_msgs::msg::OccupancyGrid::ConstSharedPtr pad_map(nav_msgs::msg::OccupancyGrid::ConstSharedPtr map, 
                                                       unsigned int width, unsigned int height)
@@ -119,27 +119,27 @@ nav_msgs::msg::OccupancyGrid::ConstSharedPtr pad_map2(nav_msgs::msg::OccupancyGr
   // Fill in the space between start of the new map to the start of the local SLAM map with -1s
   // (for the default orientation in Rviz, this is the space to the right of the SLAM map)
   std::cout << "4. hi" << std::endl;
-  for (int i=0;  i < padded_map->info.width * bottom0_height_; i++)
+  for (uint64_t i=0;  i < padded_map->info.width * bottom0_height_; i++)
   {
     padded_map->data.push_back(-1);
   }
 
   std::cout << "5. hi" << std::endl;
   // Fill in the spaces on either side of the local SLAM map with -1s, but dont replace the current values from the local SLAM map
-  for (int item_counter=0; item_counter < map->info.height; item_counter++)
+  for (uint32_t item_counter=0; item_counter < map->info.height; item_counter++)
   {
     // print item_counter
     // std::cout << "item_counter " << item_counter << std::endl;
     // For all new cells between the new starting width and the original SLAM starting width, fill with -1s
     // (for the default orientation in Rviz, this is the space below the SLAM map)
-    for (int q=0; q < bottom0_width_; q++)
+    for (size_t q=0; q < bottom0_width_; q++)
     {
       // std::cout << "q " << q << std::endl;
       padded_map->data.push_back(-1);
     }
 
     // Fill in the current SLAM map information, in its initial location
-    for (int a = 0; a < map->info.width; a++)
+    for (uint32_t a = 0; a < map->info.width; a++)
     {
       // std::cout << "a " << a << std::endl;
       padded_map->data.push_back(map->data[c0]);
@@ -150,7 +150,7 @@ nav_msgs::msg::OccupancyGrid::ConstSharedPtr pad_map2(nav_msgs::msg::OccupancyGr
     // width = 186, 132 bottom_width=133
     // For all new cells between the new ending width and the original SLAM end width, fill with -1s
     // (for the default orientation in Rviz, this is the space above the SLAM map)
-    for (int u=0; u < (padded_map->info.width - map->info.width - bottom0_width_); u++)
+    for (uint64_t u=0; u < (padded_map->info.width - map->info.width - bottom0_width_); u++)
     {
       // std::cout << "u " << u << std::endl;
       padded_map->data.push_back(-1);
@@ -161,7 +161,7 @@ nav_msgs::msg::OccupancyGrid::ConstSharedPtr pad_map2(nav_msgs::msg::OccupancyGr
 
   // Fill in the space between the end of the original SLAM map to the end of the new map with -1s
   // (for the default orientation in Rviz, this is the space to the left of the SLAM map)
-  for (int z=0;  z < ((height - map->info.height - bottom0_height_) * padded_map->info.width); z++)
+  for (uint64_t z=0;  z < ((height - map->info.height - bottom0_height_) * padded_map->info.width); z++)
   {
     padded_map->data.push_back(-1);
   }
@@ -213,8 +213,11 @@ subscriptions_size_(0)
   map_merging_timer_ = this->create_wall_timer(
     std::chrono::milliseconds((uint16_t)(1000.0 / merging_rate_)),
     [this]() { mapMerging(); });
-  // execute right away to simulate the ros1 first while loop on a thread
-  map_merging_timer_->execute_callback();
+  // // execute right away to simulate the ros1 first while loop on a thread
+  // map_merging_timer_->execute_callback();
+
+  // Execute immediately to substitute the execute_callback() that dont exist in ROS2 jazzy timers
+  mapMerging();
 
   topic_subscribing_timer_ = this->create_wall_timer(
     std::chrono::milliseconds((uint16_t)(1000.0 / discovery_rate_)),
@@ -222,20 +225,22 @@ subscriptions_size_(0)
 
   // For topicSubscribing() we need to spin briefly for the discovery to happen
   rclcpp::Rate r(100);
-  int i = 0;
-  while (rclcpp::ok() && i < 100) {
+  for (int i = 0; rclcpp::ok() && i < 100; ++i) {
     rclcpp::spin_some(this->get_node_base_interface());
     r.sleep();
-    i++;
   }
-  topic_subscribing_timer_->execute_callback(); 
+  // topic_subscribing_timer_->execute_callback(); 
+  // Execute immediately
+  topicSubscribing();
 
   if (!have_initial_poses_){
     pose_estimation_timer_ = this->create_wall_timer(
       std::chrono::milliseconds((uint16_t)(1000.0 / estimation_rate_)),
       [this]() { poseEstimation(); });
-    // execute right away to simulate the ros1 first while loop on a thread
-    pose_estimation_timer_->execute_callback(); 
+    // // execute right away to simulate the ros1 first while loop on a thread
+    // pose_estimation_timer_->execute_callback(); 
+    // Execute immediately
+    poseEstimation();
   }
 }
 
@@ -362,7 +367,7 @@ void MapMerge::mapMerging()
     {
       // We don't lock since because of ROS2 default executor only a callback can run
       // boost::shared_lock<boost::shared_mutex> lock(subscriptions_mutex_);
-      int i = 0;
+      //// int i = 0;
       for (auto& subscription : subscriptions_) {
         // std::lock_guard<std::mutex> s_lock(subscription.mutex);
 

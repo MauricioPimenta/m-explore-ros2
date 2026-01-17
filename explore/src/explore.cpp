@@ -199,6 +199,7 @@ void Explore::makePlan()
   }
 
   if (frontiers.empty()) {
+    RCLCPP_WARN(logger_, "No frontiers found, stopping exploration");
     stop();
     return;
   }
@@ -215,6 +216,7 @@ void Explore::makePlan()
                          return goalOnBlacklist(f.centroid);
                        });
   if (frontier == frontiers.end()) {
+    RCLCPP_WARN(logger_, "All frontiers are blacklisted, stopping exploration");
     stop();
     return;
   }
@@ -234,7 +236,7 @@ void Explore::makePlan()
       tf2::durationFromSec(progress_timeout_)) {  // TODO: is progress_timeout_
                                                   // in seconds?
     frontier_blacklist_.push_back(target_position);
-    RCLCPP_DEBUG(logger_, "Adding current goal to black list");
+    RCLCPP_DEBUG(logger_, "Adding current goal to blacklist");
     makePlan();
     return;
   }
