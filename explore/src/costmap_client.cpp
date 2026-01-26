@@ -224,7 +224,9 @@ geometry_msgs::msg::Pose Costmap2DClient::getRobotPose() const
   geometry_msgs::msg::PoseStamped robot_pose;
   geometry_msgs::msg::Pose empty_pose;
   robot_pose.header.frame_id = robot_base_frame_;
-  robot_pose.header.stamp = node_.now();
+  // Use 'latest available' time instead of now to avoid issues with
+  // transform delays
+  robot_pose.header.stamp = rclcpp::Time(0);
 
   auto& clk = *node_.get_clock();
 

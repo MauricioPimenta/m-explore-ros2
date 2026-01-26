@@ -149,7 +149,7 @@ void Explore::visualizeFrontiers(
   for (auto& frontier : frontiers) {
     m.type = visualization_msgs::msg::Marker::POINTS;
     m.id = int(id);
-    m.pose.position = {};
+    m.pose.position = geometry_msgs::msg::Point();
     m.scale.x = 0.1;
     m.scale.y = 0.1;
     m.scale.z = 0.1;
@@ -296,7 +296,7 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
     case rclcpp_action::ResultCode::ABORTED:
       RCLCPP_DEBUG(logger_, "Goal was aborted");
       frontier_blacklist_.push_back(frontier_goal);
-      RCLCPP_DEBUG(logger_, "Adding current goal to black list");
+      RCLCPP_DEBUG(logger_, "Adding current goal to blacklist");
       return;
     case rclcpp_action::ResultCode::CANCELED:
       RCLCPP_DEBUG(logger_, "Goal was canceled");
