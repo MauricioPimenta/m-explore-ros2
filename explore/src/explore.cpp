@@ -193,9 +193,9 @@ void Explore::makePlan()
   auto pose = costmap_client_.getRobotPose();
   // get frontiers sorted according to cost
   auto frontiers = search_.searchFrom(pose.position);
-  RCLCPP_DEBUG(logger_, "found %lu frontiers", frontiers.size());
+  RCLCPP_INFO(logger_, "found %lu frontiers", frontiers.size());
   for (size_t i = 0; i < frontiers.size(); ++i) {
-    RCLCPP_DEBUG(logger_, "frontier %zd cost: %f", i, frontiers[i].cost);
+    RCLCPP_INFO(logger_, "frontier %zd cost: %f", i, frontiers[i].cost);
   }
 
   if (frontiers.empty()) {
@@ -231,12 +231,11 @@ void Explore::makePlan()
     last_progress_ = this->now();
     prev_distance_ = frontier->min_distance;
   }
-  // black list if we've made no progress for a long time
-  if (this->now() - last_progress_ >
-      tf2::durationFromSec(progress_timeout_)) {  // TODO: is progress_timeout_
+  // blacklist if we've made no progress for a long time
+  if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {  // TODO: is progress_timeout_
                                                   // in seconds?
     frontier_blacklist_.push_back(target_position);
-    RCLCPP_DEBUG(logger_, "Adding current goal to blacklist");
+    RCLCPP_WARN(logger_, "PROGRESS TIMEOUT: Adding current goal to blacklist");
     makePlan();
     return;
   }
@@ -246,14 +245,14 @@ void Explore::makePlan()
     return;
   }
 
-  RCLCPP_DEBUG(logger_, "Sending goal to move base nav2");
+  RCLCPP_INFO(logger_, "Sending goal to move base nav2");
 
   // send goal to move_base if we have something new to pursue
   auto goal = nav2_msgs::action::NavigateToPose::Goal();
   goal.pose.pose.position = target_position;
   goal.pose.pose.orientation.w = 1.;
   goal.pose.header.frame_id = costmap_client_.getGlobalFrameID();
-  goal.pose.header.stamp = this->now();
+  goal.pose.header.stamp = rclcpp::Time(0);
 
   auto send_goal_options =
       rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SendGoalOptions();
@@ -291,15 +290,15 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
 {
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
-      RCLCPP_DEBUG(logger_, "Goal was successful");
+      RCLCPP_INFO(logger_, "Goal was successful");
       break;
     case rclcpp_action::ResultCode::ABORTED:
-      RCLCPP_DEBUG(logger_, "Goal was aborted");
+      RCLCPP_INFO(logger_, "Goal was aborted");
       frontier_blacklist_.push_back(frontier_goal);
-      RCLCPP_DEBUG(logger_, "Adding current goal to blacklist");
+      RCLCPP_INFO(logger_, "Adding current goal to blacklist");
       return;
     case rclcpp_action::ResultCode::CANCELED:
-      RCLCPP_DEBUG(logger_, "Goal was canceled");
+      RCLCPP_INFO(logger_, "Goal was canceled");
       return;
     default:
       RCLCPP_WARN(logger_, "Unknown result code from move base nav2");
