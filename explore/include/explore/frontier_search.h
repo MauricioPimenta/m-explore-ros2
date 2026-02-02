@@ -17,6 +17,7 @@ struct Frontier {
   geometry_msgs::msg::Point centroid;
   geometry_msgs::msg::Point middle;
   std::vector<geometry_msgs::msg::Point> points;
+  uint blacklist_tries = 0;
 };
 
 /**

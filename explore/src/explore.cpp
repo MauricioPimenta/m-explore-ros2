@@ -208,9 +208,11 @@ void Explore::makePlan()
 	// find non blacklisted frontier
 	auto frontier =
 			std::find_if_not(frontiers.begin(), frontiers.end(),
-											 [this](const frontier_exploration::Frontier& f) {
-												 return goalOnBlacklist(f.centroid);
-											 });
+								[this](const frontier_exploration::Frontier& f)
+								{
+									return goalOnBlacklist(f.centroid);
+								});
+	
 	if (frontier == frontiers.end()) {
 		RCLCPP_WARN(logger_, "All frontiers are blacklisted, stopping exploration");
 		stop();
@@ -251,6 +253,7 @@ void Explore::makePlan()
 
 	auto send_goal_options =
 			rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SendGoalOptions();
+
 	// send_goal_options.goal_response_callback =
 	// std::bind(&Explore::goal_response_callback, this, _1);
 	// send_goal_options.feedback_callback =
