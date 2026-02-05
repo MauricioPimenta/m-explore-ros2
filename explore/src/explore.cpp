@@ -52,9 +52,9 @@ Explore::Explore()
 {
 	double timeout;
 	double min_frontier_size;
-	this->declare_parameter<float>("planner_frequency", 1.0);
-	this->declare_parameter<float>("progress_timeout", 30.0);
-	this->declare_parameter<bool>("visualize", false);
+	planner_frequency_ = this->declare_parameter<float>("planner_frequency", 1.0);
+	progress_timeout_ =this->declare_parameter<float>("progress_timeout", 30.0);
+	visualize_ = this->declare_parameter<bool>("visualize", false);
 	this->declare_parameter<float>("potential_scale", 1e-3);
 	this->declare_parameter<float>("orientation_scale", 0.0);
 	this->declare_parameter<float>("gain_scale", 1.0);

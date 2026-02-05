@@ -119,7 +119,7 @@ Costmap2DClient::Costmap2DClient(rclcpp::Node& node, const tf2_ros::Buffer* tf)
   std::string tf_error;
   while (rclcpp::ok() &&
          !tf_->canTransform(global_frame_, robot_base_frame_,
-                            tf2::TimePointZero, tf2::durationFromSec(0.1),
+                            tf2::TimePointZero, /*tf2::durationFromSec(0.1),*/
                             &tf_error)) {
     rclcpp::spin_some(node_.get_node_base_interface());
     if (last_error + tf2::durationFromSec(5.0) < node_.now()) {
