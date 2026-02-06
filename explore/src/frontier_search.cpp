@@ -43,6 +43,8 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
   map_ = costmap_->getCharMap();
   size_x_ = costmap_->getSizeInCellsX();
   size_y_ = costmap_->getSizeInCellsY();
+  RCLCPP_INFO_STREAM(rclcpp::get_logger("Frontiersearch"), "size of costmap: " << size_x_ << " x " << size_y_ );
+
 
   // initialize flag arrays to keep track of visited and frontier cells
   std::vector<bool> frontier_flag(size_x_ * size_y_, false);
@@ -68,15 +70,19 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
     bfs.pop();
 
     // iterate over 4-connected neighbourhood
-    for (unsigned nbr : nhood4(idx, *costmap_)) {
+    for (unsigned nbr : nhood4(idx, *costmap_))
+    {
       // add to queue all free, unvisited cells, use descending search in case
       // initialized on non-free cell
-      if (map_[nbr] <= map_[idx] && !visited_flag[nbr]) {
+      if (map_[nbr] <= map_[idx] && !visited_flag[nbr])
+      {
         visited_flag[nbr] = true;
         bfs.push(nbr);
         // check if cell is new frontier cell (unvisited, NO_INFORMATION, free
         // neighbour)
-      } else if (isNewFrontierCell(nbr, frontier_flag)) {
+      }
+      else if (isNewFrontierCell(nbr, frontier_flag))
+      {
         frontier_flag[nbr] = true;
         Frontier new_frontier = buildNewFrontier(nbr, pos, frontier_flag);
         if (new_frontier.size * costmap_->getResolution() >=

@@ -21,7 +21,7 @@ def generate_launch_description():
     )
     declare_namespace_argument = DeclareLaunchArgument(
         "namespace",
-        default_value="",
+        default_value="a200_0000",
         description="Namespace for the explore node",
     )
 

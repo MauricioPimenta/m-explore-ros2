@@ -2,6 +2,7 @@
 #define FRONTIER_SEARCH_H_
 
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
+#include <rclcpp/rclcpp.hpp>
 
 namespace frontier_exploration
 {
@@ -84,6 +85,10 @@ private:
   unsigned int size_x_, size_y_;
   double potential_scale_, gain_scale_;
   double min_frontier_size_;
+
+  // logger
+  rclcpp::Logger logger_ = rclcpp::get_logger("FrontierSearch");
+
 };
 }  // namespace frontier_exploration
 #endif

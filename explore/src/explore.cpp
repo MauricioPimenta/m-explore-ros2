@@ -82,7 +82,7 @@ Explore::Explore()
 		"\t - min_travel_distance_for_abort: " << min_travel_distance_for_abort_ << "\n" <<
 		"============================";
 
-	RCLCPP_INFO_STREAM(this->get_logger(), param_message.str());
+	RCLCPP_INFO_STREAM(logger_, param_message.str());
 
 
 	move_base_client_ =
@@ -206,16 +206,20 @@ void Explore::visualizeFrontiers(const std::vector<frontier_exploration::Frontie
 void Explore::makePlan()
 {
 	// find frontiers
+	RCLCPP_INFO(this->get_logger(), "Getting robot pose from costmap...");
 	auto pose = costmap_client_.getRobotPose();
+	
 	// get frontiers sorted according to cost
+	RCLCPP_INFO(this->get_logger(), "Getting frontiers from costmap...");
 	auto frontiers = search_.searchFrom(pose.position);
+
 	RCLCPP_INFO(logger_, "found %lu frontiers", frontiers.size());
 	for (size_t i = 0; i < frontiers.size(); ++i) {
 		RCLCPP_INFO(logger_, "frontier %zd cost: %f", i, frontiers[i].cost);
 	}
 
 	if (frontiers.empty()) {
-		RCLCPP_WARN(logger_, "No frontiers found, stopping exploration");
+		RCLCPP_WARN(logger_, "No frontiers found, stopping exploration???");
 		stop();
 		return;
 	}
@@ -251,14 +255,14 @@ void Explore::makePlan()
 		last_progress_ = this->now();
 		prev_distance_ = frontier->min_distance;
 	}
-	//* Don't want to add frontiers to blacklist based on timeout
+
 	// blacklist if we've made no progress for a long time
-	// if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {  // progress_timeout_ in seconds
-	// 	frontier_blacklist_.push_back(target_position);
-	// 	RCLCPP_WARN(logger_, "PROGRESS TIMEOUT: Adding current goal to blacklist");
-	// 	makePlan();
-	// 	return;
-	// }
+	if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {  // progress_timeout_ in seconds
+		addFrontierToBlacklist(target_position);
+		RCLCPP_WARN(logger_, "PROGRESS TIMEOUT: Adding current goal to blacklist");
+		makePlan();
+		return;
+	}
 
 	// we don't need to do anything if we still pursuing the same goal
 	if (same_goal) {
@@ -305,10 +309,11 @@ bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 			{
 				if (frontier_blacklist.tries <= max_retries_per_frontier_) 
 				{
-					RCLCPP_INFO_STREAM(this->get_logger(), "Blacklisting Frontier at x: "
+					RCLCPP_INFO_STREAM(this->get_logger(), "Goal matches Blacklist Frontier at x: "
 						<< frontier_blacklist.point.x << ", y: " << frontier_blacklist.point.y);
 					RCLCPP_INFO(this->get_logger(), "Max Tries not achieved yet.. Frontier not yet blacklisted..");
-					// ++frontier_blacklist.tries;
+					RCLCPP_INFO_STREAM(this->get_logger(), "Current tries for this frontier: " << frontier_blacklist.tries << "\n");
+
 					return false;
 				}
 				else
@@ -333,33 +338,7 @@ void Explore::reachedGoal(	const NavigationGoalHandle::WrappedResult& result,
 		case rclcpp_action::ResultCode::ABORTED:
 		{
 			RCLCPP_INFO(logger_, "Goal was aborted");
-			// Add the frontier to the blacklist.. if the frontier is already on the blacklist, increment its tries
-			// frontier_blacklist_.push_back(frontier_goal);
-
-			// check if goal corresponds to any frontier in the frontier_blacklist_.
-			auto blacklisted_item = std::find_if(frontier_blacklist_.begin(), frontier_blacklist_.end(),
-				[this](const explore::FrontierBlacklist& goal)
-				{
-					return goalOnBlacklist(goal.point);
-				});
-			// If not, add this goal to the blacklist
-			if (blacklisted_item == frontier_blacklist_.end())
-			{
-				RCLCPP_WARN(logger_, "First time trying to add this frontier to the blacklist, not blacklisting yet..");
-				FrontierBlacklist blacklisted_goal;
-				blacklisted_goal.point = frontier_goal;
-				blacklisted_goal.tries = 0;
-				frontier_blacklist_.push_back(blacklisted_goal);
-			}
-			// If it matches, increment the 'tries' of the frontier in the blacklist
-			else
-			{
-				blacklisted_item->tries += 1;
-				RCLCPP_WARN_STREAM(logger_, "Incrementing tries for this frontier in the blacklist to "
-					<< blacklisted_item->tries);
-			}
-
-			// RCLCPP_INFO(logger_, "Adding current goal to blacklist");
+			addFrontierToBlacklist(frontier_goal);
 			return;
 		}
 		case rclcpp_action::ResultCode::CANCELED:
@@ -392,6 +371,33 @@ void Explore::stop()
 	move_base_client_->async_cancel_all_goals();
 	exploring_timer_->cancel();
 	RCLCPP_INFO(logger_, "Exploration stopped.");
+}
+
+// Add the frontier to the blacklist.. if the frontier is already on the blacklist, increment its tries
+void Explore::addFrontierToBlacklist(const geometry_msgs::msg::Point& frontier_goal)
+{
+	// check if goal corresponds to any frontier in the frontier_blacklist_.
+	auto blacklisted_item = std::find_if(frontier_blacklist_.begin(), frontier_blacklist_.end(),
+		[this](const explore::FrontierBlacklist& goal)
+		{
+			return goalOnBlacklist(goal.point);
+		});
+	// If not, add this goal to the blacklist
+	if (blacklisted_item == frontier_blacklist_.end())
+	{
+		RCLCPP_WARN(logger_, "First time trying to add this frontier to the blacklist, not blacklisting yet..");
+		FrontierBlacklist blacklisted_goal;
+		blacklisted_goal.point = frontier_goal;
+		blacklisted_goal.tries = 0;
+		frontier_blacklist_.push_back(blacklisted_goal);
+	}
+	// If it matches, increment the 'tries' of the frontier in the blacklist
+	else
+	{
+		blacklisted_item->tries += 1;
+		RCLCPP_WARN_STREAM(logger_, "Incrementing tries for this frontier in the blacklist to "
+			<< blacklisted_item->tries);
+	}
 }
 
 }  // namespace explore
