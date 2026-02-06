@@ -39,6 +39,7 @@
 #include <explore/explore.h>
 
 #include <thread>
+#include <string>
 
 namespace explore
 {
@@ -50,28 +51,44 @@ Explore::Explore()
 	, prev_distance_(0)
 	, last_markers_count_(0)
 {
-	double timeout;
-	double min_frontier_size;
 	planner_frequency_ = this->declare_parameter<float>("planner_frequency", 1.0);
-	progress_timeout_ =this->declare_parameter<float>("progress_timeout", 30.0);
+	progress_timeout_ = this->declare_parameter<float>("progress_timeout", 30.0);
 	visualize_ = this->declare_parameter<bool>("visualize", false);
-	this->declare_parameter<float>("potential_scale", 1e-3);
-	this->declare_parameter<float>("orientation_scale", 0.0);
-	this->declare_parameter<float>("gain_scale", 1.0);
-	this->declare_parameter<float>("min_frontier_size", 0.5);
+	potential_scale_ = this->declare_parameter<float>("potential_scale", 1e-3);
+	orientation_scale_ = this->declare_parameter<float>("orientation_scale", 0.0);
+	gain_scale_ = this->declare_parameter<float>("gain_scale", 1.0);
+	min_frontier_size_ = this->declare_parameter<float>("min_frontier_size", 0.5);
+	
+	// new params
+	max_retries_per_frontier_ = this->declare_parameter("max_retries_per_frontier", 3);
+	frontier_key_resolution_  = this->declare_parameter("frontier_key_resolution", 0.25);  // meters
+	min_travel_distance_for_abort_ = this->declare_parameter("min_travel_distance_for_abort", 0.30); // meters
 
-	this->get_parameter("planner_frequency", planner_frequency_);
-	this->get_parameter("progress_timeout", timeout);
-	this->get_parameter("visualize", visualize_);
-	this->get_parameter("potential_scale", potential_scale_);
-	this->get_parameter("orientation_scale", orientation_scale_);
-	this->get_parameter("gain_scale", gain_scale_);
-	this->get_parameter("min_frontier_size", min_frontier_size);
-	progress_timeout_ = timeout;
+	// Log Parameter values as info
+	std::stringstream param_message;
+	param_message << 
+		"======= EXPLORE_LITE ======="
+		"\n" <<
+		"Initializing explore_lite with the following parameters:\n" <<
+		"\t - planner_frequency: " << planner_frequency_ << "\n" <<
+		"\t - progress_timeout: " << progress_timeout_ << "\n" <<
+		"\t - visualize: " << (visualize_ ? "true" : "false") << "\n" <<
+		"\t - potential_scale: " << potential_scale_ << "\n" <<
+		"\t - orientation_scale: " << orientation_scale_ << "\n" <<
+		"\t - gain_scale: " << gain_scale_ << "\n" <<
+		"\t - min_frontier_size: " << min_frontier_size_ << "\n" <<
+		"\t - max_retries_per_frontier: " << max_retries_per_frontier_ << "\n" <<
+		"\t - frontier_key_resolution: " << frontier_key_resolution_ << "\n" <<
+		"\t - min_travel_distance_for_abort: " << min_travel_distance_for_abort_ << "\n" <<
+		"============================";
+
+	RCLCPP_INFO_STREAM(this->get_logger(), param_message.str());
+
+
 	move_base_client_ =
 			rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this,ACTION_NAME);
 
-	search_ = frontier_exploration::FrontierSearch(costmap_client_.getCostmap(), potential_scale_, gain_scale_, min_frontier_size);
+	search_ = frontier_exploration::FrontierSearch(costmap_client_.getCostmap(), potential_scale_, gain_scale_, min_frontier_size_);
 
 	if (visualize_)
 	{
@@ -80,7 +97,9 @@ Explore::Explore()
 	}
 
 	RCLCPP_INFO(logger_, "Waiting to connect to move_base nav2 server");
+
 	move_base_client_->wait_for_action_server();
+
 	RCLCPP_INFO(logger_, "Connected to move_base nav2 server");
 
 	exploring_timer_ = this->create_wall_timer(
@@ -126,14 +145,15 @@ void Explore::visualizeFrontiers(const std::vector<frontier_exploration::Frontie
 	m.color.g = 0;
 	m.color.b = 255;
 	m.color.a = 255;
+
 	// lives forever
-#ifdef ELOQUENT
-	m.lifetime = rclcpp::Duration(0); // deprecated in galactic warning
-#elif DASHING
-	m.lifetime = rclcpp::Duration(0); // deprecated in galactic warning
-#else
-	m.lifetime = rclcpp::Duration::from_seconds(0); // foxy onwards
-#endif
+	#ifdef ELOQUENT
+		m.lifetime = rclcpp::Duration(0); // deprecated in galactic warning
+	#elif DASHING
+		m.lifetime = rclcpp::Duration(0); // deprecated in galactic warning
+	#else
+		m.lifetime = rclcpp::Duration::from_seconds(0); // foxy onwards
+	#endif
 	// m.lifetime = rclcpp::Duration::from_nanoseconds(0); // suggested in galactic
 	m.frame_locked = true;
 
@@ -207,13 +227,12 @@ void Explore::makePlan()
 
 	// find non blacklisted frontier
 	// find the first frontier that is not in the blacklist
-	auto frontier =
-			std::find_if_not(frontiers.begin(), frontiers.end(),
-								[this](const frontier_exploration::Frontier& f)
-								{
-									return goalOnBlacklist(f.centroid);
-								});
-	
+	auto frontier = std::find_if_not(frontiers.begin(), frontiers.end(),
+		[this](const frontier_exploration::Frontier& f)
+		{
+			return goalOnBlacklist(f.centroid);
+		});
+
 	if (frontier == frontiers.end()) {
 		RCLCPP_WARN(logger_, "All frontiers are blacklisted, stopping exploration");
 		stop();
@@ -232,13 +251,14 @@ void Explore::makePlan()
 		last_progress_ = this->now();
 		prev_distance_ = frontier->min_distance;
 	}
+	//* Don't want to add frontiers to blacklist based on timeout
 	// blacklist if we've made no progress for a long time
-	if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {  // progress_timeout_ in seconds
-		frontier_blacklist_.push_back(target_position);
-		RCLCPP_WARN(logger_, "PROGRESS TIMEOUT: Adding current goal to blacklist");
-		makePlan();
-		return;
-	}
+	// if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {  // progress_timeout_ in seconds
+	// 	frontier_blacklist_.push_back(target_position);
+	// 	RCLCPP_WARN(logger_, "PROGRESS TIMEOUT: Adding current goal to blacklist");
+	// 	makePlan();
+	// 	return;
+	// }
 
 	// we don't need to do anything if we still pursuing the same goal
 	if (same_goal) {
@@ -262,26 +282,43 @@ void Explore::makePlan()
 	// send_goal_options.feedback_callback =
 	//   std::bind(&Explore::feedback_callback, this, _1, _2);
 	send_goal_options.result_callback =
-			[this,
-			 target_position](const NavigationGoalHandle::WrappedResult& result) {
-				reachedGoal(result, target_position);
-			};
+		[this, target_position](const NavigationGoalHandle::WrappedResult& result)
+		{
+			reachedGoal(result, target_position);
+		};
 	move_base_client_->async_send_goal(goal, send_goal_options);
 }
 
 bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 {
-	constexpr static size_t tolerace = 5;
+	constexpr static size_t tolerance = 5;
 	nav2_costmap_2d::Costmap2D* costmap2d = costmap_client_.getCostmap();
 
 	// check if a goal is on the blacklist for goals that we're pursuing
-	for (auto& frontier_goal : frontier_blacklist_) {
-		double x_diff = fabs(goal.x - frontier_goal.x);
-		double y_diff = fabs(goal.y - frontier_goal.y);
+	for (auto& frontier_blacklist : frontier_blacklist_) 
+	{
+			double x_diff = fabs(goal.x - frontier_blacklist.point.x);
+			double y_diff = fabs(goal.y - frontier_blacklist.point.y);
 
-		if (x_diff < tolerace * costmap2d->getResolution() &&
-				y_diff < tolerace * costmap2d->getResolution())
-			return true;
+			if (x_diff < tolerance * costmap2d->getResolution() &&
+				y_diff < tolerance * costmap2d->getResolution())
+			{
+				if (frontier_blacklist.tries <= max_retries_per_frontier_) 
+				{
+					RCLCPP_INFO_STREAM(this->get_logger(), "Blacklisting Frontier at x: "
+						<< frontier_blacklist.point.x << ", y: " << frontier_blacklist.point.y);
+					RCLCPP_INFO(this->get_logger(), "Max Tries not achieved yet.. Frontier not yet blacklisted..");
+					// ++frontier_blacklist.tries;
+					return false;
+				}
+				else
+				{
+					RCLCPP_WARN_STREAM(this->get_logger(), "Frontier at x: "
+						<< frontier_blacklist.point.x << ", y: " << frontier_blacklist.point.y
+						<< " is blacklisted after " << frontier_blacklist.tries << " tries.");
+					return true;
+				}
+			}
 	}
 	return false;
 }
@@ -292,12 +329,39 @@ void Explore::reachedGoal(	const NavigationGoalHandle::WrappedResult& result,
 	switch (result.code) {
 		case rclcpp_action::ResultCode::SUCCEEDED:
 			RCLCPP_INFO(logger_, "Goal was successful");
-			break;
-		case rclcpp_action::ResultCode::ABORTED:
-			RCLCPP_INFO(logger_, "Goal was aborted");
-			frontier_blacklist_.push_back(frontier_goal);
-			RCLCPP_INFO(logger_, "Adding current goal to blacklist");
 			return;
+		case rclcpp_action::ResultCode::ABORTED:
+		{
+			RCLCPP_INFO(logger_, "Goal was aborted");
+			// Add the frontier to the blacklist.. if the frontier is already on the blacklist, increment its tries
+			// frontier_blacklist_.push_back(frontier_goal);
+
+			// check if goal corresponds to any frontier in the frontier_blacklist_.
+			auto blacklisted_item = std::find_if(frontier_blacklist_.begin(), frontier_blacklist_.end(),
+				[this](const explore::FrontierBlacklist& goal)
+				{
+					return goalOnBlacklist(goal.point);
+				});
+			// If not, add this goal to the blacklist
+			if (blacklisted_item == frontier_blacklist_.end())
+			{
+				RCLCPP_WARN(logger_, "First time trying to add this frontier to the blacklist, not blacklisting yet..");
+				FrontierBlacklist blacklisted_goal;
+				blacklisted_goal.point = frontier_goal;
+				blacklisted_goal.tries = 0;
+				frontier_blacklist_.push_back(blacklisted_goal);
+			}
+			// If it matches, increment the 'tries' of the frontier in the blacklist
+			else
+			{
+				blacklisted_item->tries += 1;
+				RCLCPP_WARN_STREAM(logger_, "Incrementing tries for this frontier in the blacklist to "
+					<< blacklisted_item->tries);
+			}
+
+			// RCLCPP_INFO(logger_, "Adding current goal to blacklist");
+			return;
+		}
 		case rclcpp_action::ResultCode::CANCELED:
 			RCLCPP_INFO(logger_, "Goal was canceled");
 			return;
@@ -337,12 +401,10 @@ int main(int argc, char** argv)
 	rclcpp::init(argc, argv);
 	// ROS1 code
 	/*
-	if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-																		 ros::console::levels::Debug)) {
+	if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug)) {
 		ros::console::notifyLoggerLevelsChanged();
 	} */
-	rclcpp::spin(
-			std::make_shared<explore::Explore>());  // std::move(std::make_unique)?
+	rclcpp::spin(std::make_shared<explore::Explore>());  // std::move(std::make_unique)?
 	rclcpp::shutdown();
 	return 0;
 }
