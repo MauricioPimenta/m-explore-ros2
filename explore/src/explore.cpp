@@ -283,13 +283,20 @@ void Explore::makePlan()
 
 	// send_goal_options.goal_response_callback =
 	// std::bind(&Explore::goal_response_callback, this, _1);
-	// send_goal_options.feedback_callback =
-	//   std::bind(&Explore::feedback_callback, this, _1, _2);
+	send_goal_options.feedback_callback =
+	  std::bind(&Explore::navigationFeedback, this, _1, _2);
+
 	send_goal_options.result_callback =
 		[this, target_position](const NavigationGoalHandle::WrappedResult& result)
 		{
 			reachedGoal(result, target_position);
 		};
+
+	// Track when we started pursuing this goal
+	goal_start_time_ = this->now();
+	goal_start_distance_ = frontier->min_distance;
+	current_goal_ = target_position;
+
 	move_base_client_->async_send_goal(goal, send_goal_options);
 }
 
@@ -328,6 +335,55 @@ bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 			}
 	}
 	return false;
+}
+
+void Explore::navigationFeedback(
+	rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr goal_handle,
+	const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback)
+{
+	if (!feedback || !goal_handle) {
+		return;
+	}
+
+	double current_distance = feedback->distance_remaining;
+	rclcpp::Time now = this->now();
+	double elapsed_time = (now - goal_start_time_).seconds();
+	double progress_made = goal_start_distance_ - current_distance;
+
+	RCLCPP_DEBUG(logger_, "Navigation feedback: distance_remaining=%.2f m, elapsed_time=%.1f s", 
+		current_distance, elapsed_time);
+
+	// Check if robot is making progress
+	if (elapsed_time > 5.0) {  // After 5 seconds, check progress
+		double progress_rate = progress_made / elapsed_time;
+
+		RCLCPP_INFO_STREAM(logger_, "Progress: made " << progress_made << " m in " 
+			<< elapsed_time << " s (rate: " << progress_rate << " m/s)");
+
+		// If robot hasn't moved significantly in the time window, consider it stuck
+		if (progress_made < min_travel_distance_for_abort_) {
+			RCLCPP_WARN(logger_, 
+				"Robot making insufficient progress (%.3f m in %.1f s). Aborting goal and adding to blacklist.",
+				progress_made, elapsed_time);
+			
+			// Cancel the goal and add it to blacklist
+			move_base_client_->async_cancel_goal(goal_handle);
+			addFrontierToBlacklist(current_goal_);
+			return;
+		}
+	}
+
+	// If we've made no progress for progress_timeout_ seconds, abort
+	if (progress_made > 0.01) {  // Made some progress recently
+		last_progress_ = now;
+	}
+	
+	if (now - last_progress_ > tf2::durationFromSec(progress_timeout_)) {
+		RCLCPP_WARN(logger_, "No progress for %.1f seconds. Aborting goal.", progress_timeout_);
+		move_base_client_->async_cancel_goal(goal_handle);
+		addFrontierToBlacklist(current_goal_);
+		return;
+	}
 }
 
 void Explore::reachedGoal(	const NavigationGoalHandle::WrappedResult& result,

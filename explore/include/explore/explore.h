@@ -124,6 +124,13 @@ void reachedGoal(const NavigationGoalHandle::WrappedResult& result,
 void addFrontierToBlacklist(const geometry_msgs::msg::Point& frontier_goal);
 
 /*
+	* @brief  Handle navigation feedback - monitor progress toward goal
+	*/
+void navigationFeedback(
+	rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr goal_handle,
+	const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback);
+
+/*
 	* Class Parameters
 	*/
 NavigationGoalHandle::SharedPtr navigation_goal_handle_;
@@ -143,6 +150,11 @@ geometry_msgs::msg::Point prev_goal_;
 double prev_distance_;
 rclcpp::Time last_progress_;
 size_t last_markers_count_;
+
+// Navigation feedback tracking
+rclcpp::Time goal_start_time_;
+double goal_start_distance_;
+geometry_msgs::msg::Point current_goal_;
 
 // ROS parameters
 double planner_frequency_;
