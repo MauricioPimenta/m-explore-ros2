@@ -104,7 +104,16 @@ Explore::Explore()
 
 	exploring_timer_ = this->create_wall_timer(
 			std::chrono::milliseconds((uint16_t)(1000.0 / planner_frequency_)),
-			[this]() { makePlan(); });
+			[this]() 
+			{
+				std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+				if (goal_in_progress_) {
+					RCLCPP_DEBUG(logger_, "Goal in progress, skipping this cycle");
+					return;
+				}
+				else
+					makePlan(); 
+			});
 }
 
 Explore::~Explore()
@@ -234,7 +243,7 @@ void Explore::makePlan()
 	auto frontier = std::find_if_not(frontiers.begin(), frontiers.end(),
 		[this](const frontier_exploration::Frontier& f)
 		{
-			return goalOnBlacklist(f.centroid);
+			return goalBlacklisted(f.centroid);
 		});
 
 	if (frontier == frontiers.end()) {
@@ -297,12 +306,14 @@ void Explore::makePlan()
 	goal_start_distance_ = frontier->min_distance;
 	current_goal_ = target_position;
 
+	std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+	goal_in_progress_ = true;
+
 	move_base_client_->async_send_goal(goal, send_goal_options);
 }
 
-bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
+bool Explore::goalBlacklisted(const geometry_msgs::msg::Point& goal)
 {
-	constexpr static size_t tolerance = 5;
 	nav2_costmap_2d::Costmap2D* costmap2d = costmap_client_.getCostmap();
 
 	RCLCPP_INFO(this->get_logger(), "Checking if goal (%.2f, %.2f) is on blacklist", goal.x, goal.y);
@@ -313,8 +324,8 @@ bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 			double x_diff = fabs(goal.x - frontier_blacklist.point.x);
 			double y_diff = fabs(goal.y - frontier_blacklist.point.y);
 
-			if (x_diff < tolerance * costmap2d->getResolution() &&
-				y_diff < tolerance * costmap2d->getResolution())
+			if (x_diff < tolerance_for_position_matching_ * costmap2d->getResolution() &&
+				y_diff < tolerance_for_position_matching_ * costmap2d->getResolution())
 			{
 				if (frontier_blacklist.tries <= max_retries_per_frontier_) 
 				{
@@ -333,6 +344,23 @@ bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 					return true;
 				}
 			}
+	}
+	return false;
+}
+
+bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
+{
+	nav2_costmap_2d::Costmap2D* costmap2d = costmap_client_.getCostmap();
+	for (const auto& frontier_blacklist : frontier_blacklist_) 
+	{
+		double x_diff = fabs(goal.x - frontier_blacklist.point.x);
+		double y_diff = fabs(goal.y - frontier_blacklist.point.y);
+
+		if (x_diff < tolerance_for_position_matching_ * costmap2d->getResolution() &&
+				y_diff < tolerance_for_position_matching_ * costmap2d->getResolution())
+		{
+			return true;
+		}
 	}
 	return false;
 }
@@ -391,8 +419,13 @@ void Explore::reachedGoal(	const NavigationGoalHandle::WrappedResult& result,
 {
 	switch (result.code) {
 		case rclcpp_action::ResultCode::SUCCEEDED:
+		{
+			std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+			goal_in_progress_ = false;
+
 			RCLCPP_INFO(logger_, "Goal was successful");
 			return;
+		}
 		case rclcpp_action::ResultCode::ABORTED:
 		{
 			RCLCPP_INFO(logger_, "Goal was aborted");

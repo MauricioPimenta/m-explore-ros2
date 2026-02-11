@@ -81,92 +81,108 @@ typedef struct frontier_blacklist{
  */
 class Explore : public rclcpp::Node
 {
-public:
-Explore();
-~Explore();
+	public:
+		Explore();
+		~Explore();
 
-void start();
-void stop();
+		void start();
+		void stop();
 
-using NavigationGoalHandle =
-	rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>;
+		using NavigationGoalHandle =
+			rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>;
 
-private:
-/*
-	*	 Class Methods
-	*/
+	private:
+		/*
+			*	 Class Methods
+			*/
 
-/**
- * @brief  Make a global plan
- */
-void makePlan();
+		/**
+		 * @brief  Make a global plan
+		 */
+		void makePlan();
 
-// /**
-//  * @brief  Publish a frontiers as markers
-//  */
-void visualizeFrontiers(const std::vector<frontier_exploration::Frontier>& frontiers);
+		// /**
+		//  * @brief  Publish a frontiers as markers
+		//  */
+		void visualizeFrontiers(const std::vector<frontier_exploration::Frontier>& frontiers);
 
-/*
-	* @brief  Check if a frontier is on the blacklist
-	* @return true if the frontier is on the blacklist, false otherwise
-	*/
-bool goalOnBlacklist(const geometry_msgs::msg::Point& goal);
+		/*
+			* @brief  Check if a frontier is on the blacklist
+			* @return true if the frontier is on the blacklist, false otherwise
+			*/
+		bool goalOnBlacklist(const geometry_msgs::msg::Point& goal);
 
-/*
-	* @brief  Check if goal was reached - Used as Action Callback
-	*/
-void reachedGoal(const NavigationGoalHandle::WrappedResult& result,
-				const geometry_msgs::msg::Point& frontier_goal);
+		/*
+			* @brief  Check if a frontier is blacklisted
+			* @return true if the frontier is on the blacklist and if the number of tries
+			* exceeds the max retries per frontier, false otherwise
+			*/
+		bool goalBlacklisted(const geometry_msgs::msg::Point& goal);
 
-/*
-	* @brief  Add a frontier to the blacklist, or if it's already on the blacklist, increment its tries
-	*/
-void addFrontierToBlacklist(const geometry_msgs::msg::Point& frontier_goal);
+		/*
+			* @brief  Check if goal was reached - Used as Action Callback
+			*/
+		void reachedGoal(const NavigationGoalHandle::WrappedResult& result,
+						const geometry_msgs::msg::Point& frontier_goal);
 
-/*
-	* @brief  Handle navigation feedback - monitor progress toward goal
-	*/
-void navigationFeedback(
-	rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr goal_handle,
-	const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback);
+		/*
+			* @brief  Add a frontier to the blacklist, or if it's already on the blacklist, increment its tries
+			*/
+		void addFrontierToBlacklist(const geometry_msgs::msg::Point& frontier_goal);
 
-/*
-	* Class Parameters
-	*/
-NavigationGoalHandle::SharedPtr navigation_goal_handle_;
-rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_publisher_;
-rclcpp::Logger logger_ = rclcpp::get_logger("ExploreNode");
-tf2_ros::Buffer tf_buffer_;
-tf2_ros::TransformListener tf_listener_;
+		/*
+			* @brief  Handle navigation feedback - monitor progress toward goal
+			*/
+		void navigationFeedback(
+			rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr goal_handle,
+			const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback);
 
-Costmap2DClient costmap_client_;
-rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SharedPtr move_base_client_;
-frontier_exploration::FrontierSearch search_;
-rclcpp::TimerBase::SharedPtr exploring_timer_;
-// rclcpp::TimerBase::SharedPtr oneshot_;
+		/*
+			* Class Parameters
+			*/
+		NavigationGoalHandle::SharedPtr navigation_goal_handle_;
+		rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_publisher_;
+		rclcpp::Logger logger_ = rclcpp::get_logger("ExploreNode");
+		tf2_ros::Buffer tf_buffer_;
+		tf2_ros::TransformListener tf_listener_;
 
-std::vector<FrontierBlacklist> frontier_blacklist_;
-geometry_msgs::msg::Point prev_goal_;
-double prev_distance_;
-rclcpp::Time last_progress_;
-size_t last_markers_count_;
+		Costmap2DClient costmap_client_;
+		rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SharedPtr move_base_client_;
+		frontier_exploration::FrontierSearch search_;
+		rclcpp::TimerBase::SharedPtr exploring_timer_;
+		// rclcpp::TimerBase::SharedPtr oneshot_;
 
-// Navigation feedback tracking
-rclcpp::Time goal_start_time_;
-double goal_start_distance_;
-geometry_msgs::msg::Point current_goal_;
+		std::vector<FrontierBlacklist> frontier_blacklist_;
+		geometry_msgs::msg::Point prev_goal_;
+		double prev_distance_;
+		rclcpp::Time last_progress_;
+		size_t last_markers_count_;
 
-// ROS parameters
-double planner_frequency_;
-double potential_scale_, orientation_scale_, gain_scale_;
-double progress_timeout_;
-bool visualize_;
-double min_frontier_size_;
+		// Navigation feedback tracking
+		rclcpp::Time goal_start_time_;
+		double goal_start_distance_;
+		geometry_msgs::msg::Point current_goal_;
 
-	// New params
-uint max_retries_per_frontier_;
-double frontier_key_resolution_;
-double min_travel_distance_for_abort_;
+		// Mutex to protect access to the current goal and navigation state
+		std::mutex goal_in_progress_mutex_;
+		bool goal_in_progress_ = false;
+
+		// ROS parameters
+		double planner_frequency_;
+		double potential_scale_, orientation_scale_, gain_scale_;
+		double progress_timeout_;
+		bool visualize_;
+		double min_frontier_size_;
+
+			// New params
+		uint max_retries_per_frontier_;
+		double frontier_key_resolution_;
+		double min_travel_distance_for_abort_;
+
+		// in number of cells, used to determine if a frontier is close enough to a
+		// blacklisted frontier to be considered the same and thus blacklisted as well
+		uint tolerance_for_position_matching_ = 5;
+
 };
 }  // namespace explore
 
