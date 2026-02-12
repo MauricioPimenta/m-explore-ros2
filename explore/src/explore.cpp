@@ -106,13 +106,14 @@ Explore::Explore()
 			std::chrono::milliseconds((uint16_t)(1000.0 / planner_frequency_)),
 			[this]() 
 			{
-				std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
-				if (goal_in_progress_) {
-					RCLCPP_DEBUG(logger_, "Goal in progress, skipping this cycle");
-					return;
-				}
-				else
-					makePlan(); 
+				{
+					std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+					if (goal_in_progress_) {
+						RCLCPP_DEBUG(logger_, "Goal in progress, skipping this cycle");
+						return;
+					}
+				}  // Lock is released here
+				makePlan();
 			});
 }
 
@@ -278,8 +279,7 @@ void Explore::makePlan()
 		return;
 	}
 
-	RCLCPP_INFO(logger_, "Sending goal to move base nav2");
-
+	RCLCPP_INFO(logger_, "Defining goal to send to move_base nav2");
 	// send goal to move_base if we have something new to pursue
 	auto goal = nav2_msgs::action::NavigateToPose::Goal();
 	goal.pose.pose.position = target_position;
@@ -287,29 +287,66 @@ void Explore::makePlan()
 	goal.pose.header.frame_id = costmap_client_.getGlobalFrameID();
 	goal.pose.header.stamp = rclcpp::Time(0);
 
+
 	auto send_goal_options =
 			rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SendGoalOptions();
-
 	// send_goal_options.goal_response_callback =
 	// std::bind(&Explore::goal_response_callback, this, _1);
 	// send_goal_options.feedback_callback =
 	//   std::bind(&Explore::navigationFeedback, this, _1, _2);
 
+	RCLCPP_INFO(this->get_logger(), "defining response callback");
+	send_goal_options.goal_response_callback =
+    [this](const NavigationGoalHandle::SharedPtr& goal_handle)
+    {
+        if (!goal_handle) {
+            RCLCPP_ERROR(logger_, "Goal was rejected by move_base");
+			{
+				std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+				goal_in_progress_ = false;
+			}
+            return;
+        }
+        RCLCPP_INFO(logger_, "Goal accepted by move_base");
+	};
+	RCLCPP_INFO(this->get_logger(), "Response Callback defined");
+
+
+	RCLCPP_INFO(this->get_logger(), "defining result callback");
 	send_goal_options.result_callback =
 		[this, target_position](const NavigationGoalHandle::WrappedResult& result)
 		{
 			reachedGoal(result, target_position);
 		};
+	RCLCPP_INFO(this->get_logger(), "Result Callback defined");
+
 
 	// Track when we started pursuing this goal
 	goal_start_time_ = this->now();
 	goal_start_distance_ = frontier->min_distance;
 	current_goal_ = target_position;
 
-	std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
-	goal_in_progress_ = true;
 
-	move_base_client_->async_send_goal(goal, send_goal_options);
+	RCLCPP_INFO(this->get_logger(), "Locking Mutex and sending goal to move base nav2");
+	{
+		std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+		goal_in_progress_ = true;
+
+		RCLCPP_INFO(this->get_logger(), "Mutex Locked!");
+	} // Scope to release mutex lock before waiting for result callback
+
+
+	auto future = move_base_client_->async_send_goal(goal, send_goal_options);
+
+	RCLCPP_INFO(this->get_logger(), "async_send_goal called");
+
+
+	// if (future.get() == nullptr) 
+	// {
+	// 	RCLCPP_ERROR(logger_, "Failed to send goal to move_base nav2");
+	// 	return;
+	// }
+	RCLCPP_INFO(logger_, "MakePlan finished sending goal to move_base nav2");
 }
 
 bool Explore::goalBlacklisted(const geometry_msgs::msg::Point& goal)
