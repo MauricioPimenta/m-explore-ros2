@@ -225,7 +225,10 @@ void Explore::makePlan()
 
 	RCLCPP_INFO(logger_, "found %lu frontiers", frontiers.size());
 	for (size_t i = 0; i < frontiers.size(); ++i) {
-		RCLCPP_INFO(logger_, "frontier %zd cost: %f", i, frontiers[i].cost);
+		RCLCPP_INFO(logger_, "frontier %zd: cost=%.2f, size=%.3f m², pos=(%.2f, %.2f)", 
+			i, frontiers[i].cost, 
+			frontiers[i].size * std::pow(costmap_client_.getCostmap()->getResolution(), 2),
+			frontiers[i].centroid.x, frontiers[i].centroid.y);
 	}
 
 	if (frontiers.empty()) {
@@ -465,16 +468,29 @@ void Explore::reachedGoal(	const NavigationGoalHandle::WrappedResult& result,
 		}
 		case rclcpp_action::ResultCode::ABORTED:
 		{
+			std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+			goal_in_progress_ = false;
+
 			RCLCPP_INFO(logger_, "Goal was aborted");
 			addFrontierToBlacklist(frontier_goal);
 			return;
 		}
 		case rclcpp_action::ResultCode::CANCELED:
+		{
+			std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+			goal_in_progress_ = false;
+
 			RCLCPP_INFO(logger_, "Goal was canceled");
 			return;
+		}
 		default:
+		{
+			std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+			goal_in_progress_ = false;
+
 			RCLCPP_WARN(logger_, "Unknown result code from move base nav2");
 			return;
+		}
 	}
 	// find new goal immediately regardless of planning frequency.
 	// execute via timer to prevent dead lock in move_base_client (this is

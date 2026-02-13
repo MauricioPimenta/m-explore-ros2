@@ -11,7 +11,7 @@
       orientation_scale: 0.0
       gain_scale: 1.0
       transform_tolerance: 0.8
-      min_frontier_size: 0.8
+      min_frontier_size: 0.2
       max_retries_per_frontier: 5
       frontier_key_resolution: 0.20
       min_travel_distance_for_abort: 0.50
