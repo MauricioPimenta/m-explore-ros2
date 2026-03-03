@@ -4,10 +4,13 @@
     costmap_topic: map
     costmap_updates_topic: map_updates
     visualize: true
-    planner_frequency: 0.1
-    progress_timeout: 90.0
-    potential_scale: 3.0
+    planner_frequency: 0.2
+    progress_timeout: 1200.0
+    potential_scale: 5.0
     orientation_scale: 0.0
     gain_scale: 1.0
     transform_tolerance: 0.8
     min_frontier_size: 0.2
+    max_retries_per_frontier: 5
+    frontier_key_resolution: 0.20
+    min_travel_distance_for_abort: 0.50
