@@ -106,8 +106,10 @@ Explore::Explore()
 				std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
 				if (goal_in_progress_) {
 					RCLCPP_INFO(this->get_logger(), "Canceling current goal due to pause command");
-					move_base_client_->async_cancel_all_goals();
-					goal_in_progress_ = false;
+					// Stop exploration
+					stop();
+					// move_base_client_->async_cancel_goal();
+					// goal_in_progress_ = false;
 				}
 			}
   		}
