@@ -96,6 +96,23 @@ Explore::Explore()
 			this->create_publisher<visualization_msgs::msg::MarkerArray>("frontiers", 10);
 	}
 
+	pause_sub_ = this->create_subscription<std_msgs::msg::Bool>("pause", 10, 
+		[this](const std_msgs::msg::Bool::SharedPtr msg)
+		{
+			paused_.store(msg->data);
+    		RCLCPP_WARN(this->get_logger(), "Explore pause=%s", msg->data ? "true" : "false");
+			// Cancel current goal if we're pausing and we have an active goal
+			if (msg->data) {
+				std::lock_guard<std::mutex> lock(goal_in_progress_mutex_);
+				if (goal_in_progress_) {
+					RCLCPP_INFO(this->get_logger(), "Canceling current goal due to pause command");
+					move_base_client_->async_cancel_all_goals();
+					goal_in_progress_ = false;
+				}
+			}
+  		}
+	);
+
 	RCLCPP_INFO(logger_, "Waiting to connect to move_base nav2 server");
 
 	move_base_client_->wait_for_action_server();
@@ -215,6 +232,10 @@ void Explore::visualizeFrontiers(const std::vector<frontier_exploration::Frontie
 
 void Explore::makePlan()
 {
+	if (paused_.load()) {
+		RCLCPP_DEBUG(logger_, "Exploration is paused, skipping makePlan");
+		return;
+	}
 	// find frontiers
 	RCLCPP_INFO(this->get_logger(), "Getting robot pose from costmap...");
 	auto robot_pose = costmap_client_.getRobotPose();

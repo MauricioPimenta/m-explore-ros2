@@ -40,7 +40,9 @@
 
 #include <explore/costmap_client.h>
 #include <explore/frontier_search.h>
+
 #include <geometry_msgs/msg/pose_stamped.h>
+#include <std_msgs/msg/bool.hpp>
 #include <tf2_ros/transform_listener.h>
 
 #include <chrono>
@@ -56,6 +58,7 @@
 
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+
 
 using namespace std::placeholders;
 #ifdef ELOQUENT
@@ -145,6 +148,9 @@ class Explore : public rclcpp::Node
 		rclcpp::Logger logger_ = rclcpp::get_logger("ExploreNode");
 		tf2_ros::Buffer tf_buffer_;
 		tf2_ros::TransformListener tf_listener_;
+
+		rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pause_sub_;
+		std::atomic<bool> paused_{false};
 
 		Costmap2DClient costmap_client_;
 		rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SharedPtr move_base_client_;
